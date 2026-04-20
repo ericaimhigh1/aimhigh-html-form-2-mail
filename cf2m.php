@@ -253,34 +253,16 @@ final class CF2M_Plugin {
 	private static function render_template(string $template, array $data): string {
 		$normalized_data = self::normalize_template_data($data);
 
-		// Replace {{field_name}} placeholders.
+		// Strictly replace {{placeholder}} tokens.
+		// Supports keys like first_name, availability-date, phone2.
 		$rendered = preg_replace_callback(
-			'/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/',
+			'/\{\{\s*([a-zA-Z][a-zA-Z0-9_-]*)\s*\}\}/',
 			static function (array $matches) use ($normalized_data): string {
 				$key = sanitize_key($matches[1]);
 				$value = $normalized_data[$key] ?? 'N/A';
 				return esc_html($value);
 			},
 			$template
-		);
-
-		if (!is_string($rendered)) {
-			$rendered = $template;
-		}
-
-		// Also support simple placeholders written as plain text between HTML tags, e.g. <p>first_name</p>.
-		$rendered = preg_replace_callback(
-			'/(>)(\s*)([a-zA-Z][a-zA-Z0-9_]*)(\s*)(<)/',
-			static function (array $matches) use ($normalized_data): string {
-				$key = sanitize_key($matches[3]);
-				if ($key === '') {
-					return $matches[0];
-				}
-
-				$value = $normalized_data[$key] ?? 'N/A';
-				return $matches[1] . $matches[2] . esc_html($value) . $matches[4] . $matches[5];
-			},
-			$rendered
 		);
 
 		if (!is_string($rendered)) {
@@ -307,8 +289,53 @@ final class CF2M_Plugin {
 			$normalized[$clean_key] = (string) $value;
 		}
 
+		// Enriched placeholders always available in templates.
+		$normalized['siteurl'] = home_url('/');
+		$normalized['logourl'] = self::get_site_logo_url();
+
 		return $normalized;
 	}
+
+	private static function get_site_logo_url(): string {
+		$custom_logo_id = (int) get_theme_mod('custom_logo');
+		if ($custom_logo_id > 0) {
+			$logo_url = wp_get_attachment_image_url($custom_logo_id, 'full');
+			if (is_string($logo_url) && $logo_url !== '') {
+				return $logo_url;
+			}
+
+			$attachment_url = wp_get_attachment_url($custom_logo_id);
+			if (is_string($attachment_url) && $attachment_url !== '') {
+				return $attachment_url;
+			}
+		}
+
+		// Some themes/plugins provide logo HTML via core helper.
+		$custom_logo_html = get_custom_logo();
+		if (is_string($custom_logo_html) && $custom_logo_html !== '') {
+			if (preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $custom_logo_html, $matches) === 1 && !empty($matches[1])) {
+				return esc_url_raw($matches[1]);
+			}
+		}
+
+		// Common option-level fallbacks used by some themes.
+		$option_logo_id = (int) get_option('site_logo');
+		if ($option_logo_id > 0) {
+			$option_logo_url = wp_get_attachment_image_url($option_logo_id, 'full');
+			if (is_string($option_logo_url) && $option_logo_url !== '') {
+				return $option_logo_url;
+			}
+		}
+
+		// Fallback to site icon if custom logo is not set.
+		$icon_url = get_site_icon_url(512);
+		if (is_string($icon_url) && $icon_url !== '') {
+			return $icon_url;
+		}
+
+		return  home_url('/') . "/logo.png";
+	}
+
 
 	private static function get_client_ip(): string {
 		$keys = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'];
@@ -320,7 +347,7 @@ final class CF2M_Plugin {
 			}
 		}
 
-		return '';
+		return 'N/A';
 	}
 
 	private static function respond(int $status_code, string $message): void {
