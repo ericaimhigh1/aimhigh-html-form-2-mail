@@ -17,6 +17,8 @@ final class CF2M_Plugin {
 	private const NONCE_ACTION   = 'cf2m_submit_form';
 	private const NONCE_FIELD    = 'cf2m_nonce';
 	private const HONEYPOT_FIELD = 'cf2m_hp';
+	private const TEMPLATE_FIELD = 'template_name';
+	private const DEFAULT_TEMPLATE = 'default';
 	private const TARGET_EMAIL   = 'test@localhost.test';
 
 	public static function init(): void {
@@ -90,23 +92,24 @@ final class CF2M_Plugin {
 			self::respond(400, 'Invalid submission.');
 		}
 
-		$subject = '[CF2M] New Form Submission';
-
-		$body_lines = [];
-		$body_lines[] = 'A form was submitted via /cf2m.';
-		$body_lines[] = '';
-		$body_lines[] = 'IP: ' . sanitize_text_field(self::get_client_ip());
-		$body_lines[] = 'User Agent: ' . sanitize_text_field((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
-		$body_lines[] = '';
-		$body_lines[] = 'Submitted fields:';
-
-		foreach ($sanitized as $key => $value) {
-			$body_lines[] = sprintf('- %s: %s', $key, is_scalar($value) ? (string) $value : wp_json_encode($value));
+		$template_name = isset($_POST[self::TEMPLATE_FIELD]) ? sanitize_key(wp_unslash((string) $_POST[self::TEMPLATE_FIELD])) : self::DEFAULT_TEMPLATE;
+		if ($template_name === '') {
+			$template_name = self::DEFAULT_TEMPLATE;
 		}
 
-		$body = implode("\n", $body_lines);
+		$template_contents = self::load_template($template_name);
+		if ($template_contents === null) {
+			$template_contents = self::load_template(self::DEFAULT_TEMPLATE);
+		}
 
-		$headers = ['Content-Type: text/plain; charset=UTF-8'];
+		if ($template_contents === null) {
+			self::respond(500, 'Template not found.');
+		}
+
+		$subject = '[CF2M] New Form Submission';
+		$body    = self::render_template($template_contents, $sanitized);
+
+		$headers = ['Content-Type: text/html; charset=UTF-8'];
 
 		$sent = wp_mail(self::TARGET_EMAIL, $subject, $body, $headers);
 
@@ -121,6 +124,7 @@ final class CF2M_Plugin {
 		$exclude_keys = [
 			self::NONCE_FIELD,
 			self::HONEYPOT_FIELD,
+			self::TEMPLATE_FIELD,
 			'_wp_http_referer',
 			'_wpnonce',
 			'action',
@@ -212,6 +216,98 @@ final class CF2M_Plugin {
 
 		set_transient($key, $count + 1, $window);
 		return true;
+	}
+
+	private static function load_template(string $template_name): ?string {
+		$base_dir = plugin_dir_path(__FILE__) . 'templates/';
+		if (!is_dir($base_dir)) {
+			return null;
+		}
+
+		$base_real = realpath($base_dir);
+		if ($base_real === false) {
+			return null;
+		}
+
+		$file = $template_name . '.html';
+		$path = $base_real . DIRECTORY_SEPARATOR . $file;
+
+		$path_real = realpath($path);
+		if ($path_real === false || !is_file($path_real)) {
+			return null;
+		}
+
+		// Ensure template path cannot escape configured directory.
+		if (strpos($path_real, $base_real . DIRECTORY_SEPARATOR) !== 0 && $path_real !== $base_real . DIRECTORY_SEPARATOR . $file) {
+			return null;
+		}
+
+		$contents = file_get_contents($path_real);
+		if ($contents === false) {
+			return null;
+		}
+
+		return $contents;
+	}
+
+	private static function render_template(string $template, array $data): string {
+		$normalized_data = self::normalize_template_data($data);
+
+		// Replace {{field_name}} placeholders.
+		$rendered = preg_replace_callback(
+			'/\{\{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*\}\}/',
+			static function (array $matches) use ($normalized_data): string {
+				$key = sanitize_key($matches[1]);
+				$value = $normalized_data[$key] ?? 'N/A';
+				return esc_html($value);
+			},
+			$template
+		);
+
+		if (!is_string($rendered)) {
+			$rendered = $template;
+		}
+
+		// Also support simple placeholders written as plain text between HTML tags, e.g. <p>first_name</p>.
+		$rendered = preg_replace_callback(
+			'/(>)(\s*)([a-zA-Z][a-zA-Z0-9_]*)(\s*)(<)/',
+			static function (array $matches) use ($normalized_data): string {
+				$key = sanitize_key($matches[3]);
+				if ($key === '') {
+					return $matches[0];
+				}
+
+				$value = $normalized_data[$key] ?? 'N/A';
+				return $matches[1] . $matches[2] . esc_html($value) . $matches[4] . $matches[5];
+			},
+			$rendered
+		);
+
+		if (!is_string($rendered)) {
+			return esc_html__('Unable to render email template.', 'cf2m');
+		}
+
+		return $rendered;
+	}
+
+	private static function normalize_template_data(array $data): array {
+		$normalized = [];
+
+		foreach ($data as $key => $value) {
+			$clean_key = sanitize_key((string) $key);
+			if ($clean_key === '') {
+				continue;
+			}
+
+			if (is_array($value)) {
+				$normalized[$clean_key] = implode(', ', array_map('strval', $value));
+				continue;
+			}
+
+			$normalized[$clean_key] = (string) $value;
+		}
+
+		return $normalized;
 	}
 
 	private static function get_client_ip(): string {
