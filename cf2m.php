@@ -1,10 +1,17 @@
 <?php
 /**
- * Plugin Name: Custom Form 2 Mail
- * Description: Handles frontend custom HTML form submissions at /cf2m and emails sanitized payloads.
- * Version: 1.0.0
- * Author: Eric Aimhigh
- * License: GPL-2.0-or-later
+ * Plugin Name:       Custom Form 2 Mail
+ * Plugin URI:        https://github.com/ericaimhigh1/custom-form-2-mail
+ * Description:       Accepts public HTML form POSTs at a configurable URL and emails sanitized submissions using  admin-defined HTML template.
+ * Version:           1.0.0
+ * Author:            Eric Aimhigh
+ * Author URI:        https://x.com/ericaimhigh
+ * License:           GPL-2.0-or-later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       cf2m
+ * Domain Path:       /languages
+ * Requires at least: 6.0
+ * Requires PHP:      7.4
  */
 
 if (!defined('ABSPATH')) {
@@ -12,25 +19,34 @@ if (!defined('ABSPATH')) {
 }
 
 final class CF2M_Plugin {
-	private const QUERY_VAR      = 'cf2m_action';
-	private const QUERY_VALUE    = 'submit';
-	private const NONCE_ACTION   = 'cf2m_submit_form';
-	private const NONCE_FIELD    = 'cf2m_nonce';
-	private const HONEYPOT_FIELD = 'cf2m_hp';
-	private const TEMPLATE_FIELD = 'template_name';
+	private const QUERY_VAR        = 'cf2m_action';
+	private const QUERY_VALUE      = 'submit';
+	private const NONCE_ACTION     = 'cf2m_submit_form';
+	private const NONCE_FIELD      = 'cf2m_nonce';
+	private const HONEYPOT_FIELD   = 'cf2m_hp';
+	private const TEMPLATE_FIELD   = 'template_name';
 	private const DEFAULT_TEMPLATE = 'default';
-	private const TARGET_EMAIL   = 'test@localhost.test';
+
+	private const OPTION_ENDPOINT         = 'cf2m_endpoint';
+	private const OPTION_RECIPIENT_EMAIL  = 'cf2m_recipient_email';
+	private const OPTION_EMAIL_TEMPLATE   = 'cf2m_email_template';
 
 	public static function init(): void {
-		add_action('init', [__CLASS__, 'add_rewrite_rule']);
+		add_action('init', [__CLASS__, 'add_rewrite_rule'], 10, 0);
 		add_filter('query_vars', [__CLASS__, 'register_query_var']);
 		add_action('template_redirect', [__CLASS__, 'maybe_handle_submission']);
 
-		// Optional helper for nonce field in frontend forms.
+		add_action('admin_menu', [__CLASS__, 'register_admin_menu']);
+		add_action('admin_init', [__CLASS__, 'register_settings']);
+		add_action('update_option_' . self::OPTION_ENDPOINT, [__CLASS__, 'on_endpoint_changed'], 10, 3);
+
 		add_shortcode('cf2m_nonce_field', [__CLASS__, 'shortcode_nonce_field']);
 	}
 
 	public static function activate(): void {
+		add_option(self::OPTION_ENDPOINT, 'cf2m');
+		add_option(self::OPTION_RECIPIENT_EMAIL, '');
+		add_option(self::OPTION_EMAIL_TEMPLATE, '');
 		self::add_rewrite_rule();
 		flush_rewrite_rules();
 	}
@@ -39,9 +55,25 @@ final class CF2M_Plugin {
 		flush_rewrite_rules();
 	}
 
+	public static function on_endpoint_changed($old_value, $value, $option): void {
+		if ((string) $old_value !== (string) $value) {
+			flush_rewrite_rules(false);
+		}
+	}
+
+	public static function get_endpoint_slug(): string {
+		$slug = get_option(self::OPTION_ENDPOINT, 'cf2m');
+		return is_string($slug) && $slug !== '' ? $slug : 'cf2m';
+	}
+
 	public static function add_rewrite_rule(): void {
+		$slug = preg_replace('/[^a-z0-9_-]+/i', '', self::get_endpoint_slug());
+		if ($slug === '') {
+			$slug = 'cf2m';
+		}
+
 		add_rewrite_rule(
-			'^cf2m/?$',
+			'^' . $slug . '/?$',
 			'index.php?' . self::QUERY_VAR . '=' . self::QUERY_VALUE,
 			'top'
 		);
@@ -50,6 +82,127 @@ final class CF2M_Plugin {
 	public static function register_query_var(array $vars): array {
 		$vars[] = self::QUERY_VAR;
 		return $vars;
+	}
+
+	public static function register_admin_menu(): void {
+		add_options_page(
+			__('CF2M', 'cf2m'),
+			__('CF2M', 'cf2m'),
+			'manage_options',
+			'cf2m',
+			[__CLASS__, 'render_settings_page']
+		);
+	}
+
+	public static function register_settings(): void {
+		register_setting(
+			'cf2m_settings',
+			self::OPTION_ENDPOINT,
+			[
+				'type'              => 'string',
+				'sanitize_callback' => [__CLASS__, 'sanitize_endpoint_option'],
+				'default'           => 'cf2m',
+			]
+		);
+
+		register_setting(
+			'cf2m_settings',
+			self::OPTION_RECIPIENT_EMAIL,
+			[
+				'type'              => 'string',
+				'sanitize_callback' => [__CLASS__, 'sanitize_recipient_email_option'],
+				'default'           => '',
+			]
+		);
+
+		register_setting(
+			'cf2m_settings',
+			self::OPTION_EMAIL_TEMPLATE,
+			[
+				'type'              => 'string',
+				'sanitize_callback' => [__CLASS__, 'sanitize_email_template_option'],
+				'default'           => '',
+			]
+		);
+	}
+
+	public static function sanitize_endpoint_option($value): string {
+		$raw = is_string($value) ? wp_unslash($value) : '';
+		$raw = trim($raw, " \t\n\r\0\x0B/");
+		$slug = preg_replace('/[^a-z0-9_-]+/i', '', $raw);
+		return $slug !== '' ? $slug : 'cf2m';
+	}
+
+	public static function sanitize_recipient_email_option($value): string {
+		$raw = is_string($value) ? wp_unslash($value) : '';
+		$raw = trim($raw);
+		if ($raw === '') {
+			return '';
+		}
+		$email = sanitize_email($raw);
+		return is_email($email) ? $email : '';
+	}
+
+	public static function sanitize_email_template_option($value): string {
+		if (!is_string($value)) {
+			return '';
+		}
+		return wp_kses_post(wp_unslash($value));
+	}
+
+	public static function render_settings_page(): void {
+		if (!current_user_can('manage_options')) {
+			return;
+		}
+
+		$slug   = self::get_endpoint_slug();
+		$url    = home_url('/' . rawurlencode($slug) . '/');
+		$action = esc_url(admin_url('options.php'));
+		?>
+		<div class="wrap">
+			<h1><?php echo esc_html__('CF2M — Form to email', 'cf2m'); ?></h1>
+			<p class="description">
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %s: example form action URL */
+						__('Point your form action to: %s', 'cf2m'),
+						$url
+					)
+				);
+				?>
+			</p>
+			<form method="post" action="<?php echo $action; ?>">
+				<?php settings_fields('cf2m_settings'); ?>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="cf2m_endpoint"><?php esc_html_e('Form endpoint path', 'cf2m'); ?></label></th>
+						<td>
+							<input name="<?php echo esc_attr(self::OPTION_ENDPOINT); ?>" type="text" id="cf2m_endpoint" value="<?php echo esc_attr($slug); ?>" class="regular-text" />
+							<p class="description"><?php esc_html_e('Slug only, no slashes (e.g. submit or cf2m). Default: cf2m. When done, go to the Settings > permalinks and save for the endpoint to be activated.', 'cf2m'); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cf2m_recipient_email"><?php esc_html_e('Recipient email', 'cf2m'); ?></label></th>
+						<td>
+							<input name="<?php echo esc_attr(self::OPTION_RECIPIENT_EMAIL); ?>" type="email" id="cf2m_recipient_email" value="<?php echo esc_attr((string) get_option(self::OPTION_RECIPIENT_EMAIL, '')); ?>" class="regular-text" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>" />
+							<p class="description"><?php esc_html_e('Enter an email to receive email submissions of your custom form. Leave empty to use the WordPress admin email.', 'cf2m'); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cf2m_email_template"><?php esc_html_e('Custom email HTML', 'cf2m'); ?></label></th>
+						<td>
+							<textarea name="<?php echo esc_attr(self::OPTION_EMAIL_TEMPLATE); ?>" id="cf2m_email_template" rows="14" class="large-text code"><?php echo esc_textarea((string) get_option(self::OPTION_EMAIL_TEMPLATE, '')); ?></textarea>
+							<p class="description">
+								<?php esc_html_e('If this is not empty, it is used first for every submission (supports {{field-name}} placeholders). If empty, the plugin uses templates/{name}.html from the form’s template_name, then templates/default.html (or Default.html), then a simple HTML table of fields.', 'cf2m'); ?>
+							</p>
+						</td>
+					</tr>
+				</table>
+				<?php submit_button(); ?>
+			</form>
+		</div>
+		<?php
 	}
 
 	public static function shortcode_nonce_field(): string {
@@ -63,33 +216,28 @@ final class CF2M_Plugin {
 			return;
 		}
 
-		// Route exists, but only accept POST.
 		if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-			self::respond(405, 'Method not allowed. Use POST.');
+			self::respond(405, __('Method not allowed. Use POST.', 'cf2m'));
 		}
 
-		// Basic same-origin check (defense in depth).
 		if (!self::is_same_origin_request()) {
-			self::respond(403, 'Origin check failed.');
+			self::respond(403, __('Origin check failed.', 'cf2m'));
 		}
 
-		// CSRF protection: verify nonce when present. This is required if form includes [cf2m_nonce_field].
 		$nonce = isset($_POST[self::NONCE_FIELD]) ? sanitize_text_field(wp_unslash($_POST[self::NONCE_FIELD])) : '';
 		if ($nonce !== '' && !wp_verify_nonce($nonce, self::NONCE_ACTION)) {
-			self::respond(403, 'Security check failed.');
+			self::respond(403, __('Security check failed.', 'cf2m'));
 		}
 
-		// Basic per-IP rate limit to reduce abuse of unauthenticated endpoint.
 		if (!self::allow_request_rate()) {
-			self::respond(429, 'Too many submissions. Please try again later.');
+			self::respond(429, __('Too many submissions. Please try again later.', 'cf2m'));
 		}
 
 		$sanitized = self::sanitize_form_data($_POST);
 
-		// Honeypot check: use a dedicated hidden field so legitimate "website" inputs are allowed.
 		$honeypot = isset($_POST[self::HONEYPOT_FIELD]) ? sanitize_text_field(wp_unslash($_POST[self::HONEYPOT_FIELD])) : '';
 		if ($honeypot !== '') {
-			self::respond(400, 'Invalid submission.');
+			self::respond(400, __('Invalid submission.', 'cf2m'));
 		}
 
 		$template_name = isset($_POST[self::TEMPLATE_FIELD]) ? sanitize_key(wp_unslash((string) $_POST[self::TEMPLATE_FIELD])) : self::DEFAULT_TEMPLATE;
@@ -97,27 +245,62 @@ final class CF2M_Plugin {
 			$template_name = self::DEFAULT_TEMPLATE;
 		}
 
-		$template_contents = self::load_template($template_name);
-		if ($template_contents === null) {
-			$template_contents = self::load_template(self::DEFAULT_TEMPLATE);
+		$custom_html = trim((string) get_option(self::OPTION_EMAIL_TEMPLATE, ''));
+		if ($custom_html !== '') {
+			$body = self::render_template($custom_html, $sanitized);
+		} else {
+			$template_contents = self::load_template($template_name);
+			if ($template_contents === null && $template_name !== self::DEFAULT_TEMPLATE) {
+				$template_contents = self::load_template(self::DEFAULT_TEMPLATE);
+			}
+
+			if ($template_contents !== null) {
+				$body = self::render_template($template_contents, $sanitized);
+			} else {
+				$body = self::build_raw_html_submission_email($sanitized);
+			}
 		}
 
-		if ($template_contents === null) {
-			self::respond(500, 'Template not found.');
-		}
-
-		$subject = '[CF2M] New Form Submission';
-		$body    = self::render_template($template_contents, $sanitized);
-
+		$subject = __('[CF2M] New form submission', 'cf2m');
 		$headers = ['Content-Type: text/html; charset=UTF-8'];
 
-		$sent = wp_mail(self::TARGET_EMAIL, $subject, $body, $headers);
-
-		if (!$sent) {
-			self::respond(500, 'Failed to send email.');
+		$to = (string) get_option(self::OPTION_RECIPIENT_EMAIL, '');
+		if ($to === '' || !is_email($to)) {
+			$to = (string) get_option('admin_email');
 		}
 
-		self::respond(200, 'Form submitted successfully.');
+		$sent = wp_mail($to, $subject, $body, $headers);
+
+		if (!$sent) {
+			self::respond(500, __('Failed to send email.', 'cf2m'));
+		}
+
+		self::respond(200, __('Form submitted successfully.', 'cf2m'));
+	}
+
+	private static function build_raw_html_submission_email(array $sanitized): string {
+		$rows = '';
+		foreach ($sanitized as $key => $value) {
+			$label = esc_html((string) $key);
+			if (is_array($value)) {
+				$cell = esc_html(implode(', ', array_map('strval', $value)));
+			} else {
+				$cell = nl2br(esc_html((string) $value));
+			}
+			$rows .= '<tr><th scope="row" style="text-align:left;vertical-align:top;padding:8px;border:1px solid #ccc;">' . $label . '</th>';
+			$rows .= '<td style="padding:8px;border:1px solid #ccc;">' . $cell . '</td></tr>';
+		}
+
+		if ($rows === '') {
+			$rows = '<tr><td colspan="2" style="padding:8px;border:1px solid #ccc;">' . esc_html__('(No fields submitted.)', 'cf2m') . '</td></tr>';
+		}
+
+		$html  = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>';
+		$html .= '<p>' . esc_html__('New form submission (no template configured).', 'cf2m') . '</p>';
+		$html .= '<table style="border-collapse:collapse;width:100%;max-width:640px;">' . $rows . '</table>';
+		$html .= '</body></html>';
+
+		return $html;
 	}
 
 	private static function sanitize_form_data(array $raw): array {
@@ -140,7 +323,7 @@ final class CF2M_Plugin {
 				continue;
 			}
 
-			$value = wp_unslash($value);
+			$value       = wp_unslash($value);
 			$clean[$key] = self::sanitize_value_by_key($key, $value);
 		}
 
@@ -165,7 +348,6 @@ final class CF2M_Plugin {
 			return esc_url_raw($value);
 		}
 
-		// Preserve line breaks for message-like fields, strip dangerous tags.
 		if (strpos($key, 'message') !== false || strpos($key, 'comment') !== false) {
 			return sanitize_textarea_field($value);
 		}
@@ -182,12 +364,10 @@ final class CF2M_Plugin {
 			return false;
 		}
 
-		// Some browsers/privacy tools omit both headers; allow in that case and rely on sanitization + rate limits.
 		if (!$origin && !$referer) {
 			return true;
 		}
 
-		// Accept if either Origin or Referer matches site host.
 		if ($origin && hash_equals((string) $site_host, (string) $origin)) {
 			return true;
 		}
@@ -205,9 +385,9 @@ final class CF2M_Plugin {
 			return true;
 		}
 
-		$key = 'cf2m_rate_' . md5($ip);
+		$key          = 'cf2m_rate_' . md5($ip);
 		$max_requests = 5;
-		$window = MINUTE_IN_SECONDS;
+		$window       = MINUTE_IN_SECONDS;
 
 		$count = (int) get_transient($key);
 		if ($count >= $max_requests) {
@@ -229,36 +409,43 @@ final class CF2M_Plugin {
 			return null;
 		}
 
-		$file = $template_name . '.html';
-		$path = $base_real . DIRECTORY_SEPARATOR . $file;
-
-		$path_real = realpath($path);
-		if ($path_real === false || !is_file($path_real)) {
-			return null;
+		$filenames = [ $template_name . '.html' ];
+		if (strtolower($template_name) === strtolower(self::DEFAULT_TEMPLATE)) {
+			$filenames[] = 'Default.html';
+			$filenames   = array_values(array_unique($filenames));
 		}
 
-		// Ensure template path cannot escape configured directory.
-		if (strpos($path_real, $base_real . DIRECTORY_SEPARATOR) !== 0 && $path_real !== $base_real . DIRECTORY_SEPARATOR . $file) {
-			return null;
+		foreach ($filenames as $file) {
+			if (!preg_match('/^[a-zA-Z0-9_-]+\.html$/', $file)) {
+				continue;
+			}
+
+			$path      = $base_real . DIRECTORY_SEPARATOR . $file;
+			$path_real = realpath($path);
+			if ($path_real === false || !is_file($path_real)) {
+				continue;
+			}
+
+			if (strpos($path_real, $base_real . DIRECTORY_SEPARATOR) !== 0 && $path_real !== $base_real . DIRECTORY_SEPARATOR . $file) {
+				continue;
+			}
+
+			$contents = file_get_contents($path_real);
+			if ($contents !== false) {
+				return $contents;
+			}
 		}
 
-		$contents = file_get_contents($path_real);
-		if ($contents === false) {
-			return null;
-		}
-
-		return $contents;
+		return null;
 	}
 
 	private static function render_template(string $template, array $data): string {
 		$normalized_data = self::normalize_template_data($data);
 
-		// Strictly replace {{placeholder}} tokens.
-		// Supports keys like first_name, availability-date, phone2.
 		$rendered = preg_replace_callback(
 			'/\{\{\s*([a-zA-Z][a-zA-Z0-9_-]*)\s*\}\}/',
 			static function (array $matches) use ($normalized_data): string {
-				$key = sanitize_key($matches[1]);
+				$key    = sanitize_key($matches[1]);
 				$value = $normalized_data[$key] ?? 'N/A';
 				return esc_html($value);
 			},
@@ -269,7 +456,24 @@ final class CF2M_Plugin {
 			return esc_html__('Unable to render email template.', 'cf2m');
 		}
 
-		return $rendered;
+		return self::apply_builtin_template_tokens($rendered);
+	}
+
+	/**
+	 * Replaces [timestamp] and [ip] in email HTML (site-local time and client IP).
+	 */
+	private static function apply_builtin_template_tokens(string $html): string {
+		$timestamp = wp_date(
+			(string) get_option('date_format', 'Y-m-d') . ' ' . (string) get_option('time_format', 'H:i'),
+			null
+		);
+		$ip = self::get_client_ip();
+		$ip = $ip !== '' ? sanitize_text_field($ip) : 'N/A';
+
+		$html = str_replace('[timestamp]', esc_html($timestamp), $html);
+		$html = str_replace('[ip]', esc_html($ip), $html);
+
+		return $html;
 	}
 
 	private static function normalize_template_data(array $data): array {
@@ -289,7 +493,6 @@ final class CF2M_Plugin {
 			$normalized[$clean_key] = (string) $value;
 		}
 
-		// Enriched placeholders always available in templates.
 		$normalized['siteurl'] = home_url('/');
 		$normalized['logourl'] = self::get_site_logo_url();
 
@@ -310,7 +513,6 @@ final class CF2M_Plugin {
 			}
 		}
 
-		// Some themes/plugins provide logo HTML via core helper.
 		$custom_logo_html = get_custom_logo();
 		if (is_string($custom_logo_html) && $custom_logo_html !== '') {
 			if (preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $custom_logo_html, $matches) === 1 && !empty($matches[1])) {
@@ -318,7 +520,6 @@ final class CF2M_Plugin {
 			}
 		}
 
-		// Common option-level fallbacks used by some themes.
 		$option_logo_id = (int) get_option('site_logo');
 		if ($option_logo_id > 0) {
 			$option_logo_url = wp_get_attachment_image_url($option_logo_id, 'full');
@@ -327,15 +528,13 @@ final class CF2M_Plugin {
 			}
 		}
 
-		// Fallback to site icon if custom logo is not set.
 		$icon_url = get_site_icon_url(512);
 		if (is_string($icon_url) && $icon_url !== '') {
 			return $icon_url;
 		}
 
-		return  home_url('/') . "/logo.png";
+		return home_url('/logo.png');
 	}
-
 
 	private static function get_client_ip(): string {
 		$keys = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'];
@@ -347,13 +546,12 @@ final class CF2M_Plugin {
 			}
 		}
 
-		return 'N/A';
+		return '';
 	}
 
 	private static function respond(int $status_code, string $message): void {
 		status_header($status_code);
 
-		// Return JSON for easier frontend handling.
 		wp_send_json(
 			[
 				'success' => $status_code >= 200 && $status_code < 300,
