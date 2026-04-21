@@ -1,4 +1,4 @@
-=== CCustom Form 2 Mail (CF2M) ===
+=== Aimhigh HTML Form 2 Mail (AHF2M) ===
 Contributors: ericaimhigh
 Tags: coupon, gutenberg, block, affiliate, discount
 Requires at least: 5.8
@@ -8,9 +8,9 @@ Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-# 
+#
 
-**CF2M** is a WordPress plugin that exposes a **configurable public URL** where visitors can `POST` a plain HTML form. Submissions are **sanitized**, **never stored in the database**, and sent to a recipient as an **HTML email** using your **template** (admin HTML and/or files under `templates/`).
+**AHF2M** is a WordPress plugin that exposes a **configurable public URL** where visitors can `POST` a plain HTML form. Submissions are **sanitized**, **never stored in the database**, and sent to a recipient as an **HTML email** using your **template** (admin HTML and/or files under `templates/`).
 
 Use cases include Elementor “HTML” widgets, block editor Custom HTML, or any theme template where you control the form markup.
 
@@ -26,17 +26,17 @@ Use cases include Elementor “HTML” widgets, block editor Custom HTML, or any
 
 ## Installation
 
-1. Copy the `cf2m` folder into `wp-content/plugins/`.
+1. Copy the `ahf2m` folder into `wp-content/plugins/`.
 2. In **Plugins**, activate **Custom Form 2 Mail**.
 3. Go to **Settings → Permalinks** and click **Save Changes** (no need to edit anything). This registers the form endpoint with WordPress.
-4. Open **Settings → CF2M** and configure the endpoint, recipient, and optional custom HTML template.
+4. Open **Settings → AHF2M** and configure the endpoint, recipient, and optional custom HTML template.
 
 ---
 
 ## Quick start (site owners)
 
-1. **Settings → CF2M**  
-   Note the URL shown at the top (e.g. `https://example.com/cf2m/`). That is your form **action**.
+1. **Settings → AHF2M**  
+   Note the URL shown at the top (e.g. `https://example.com/ahf2m/`). That is your form **action**.
 2. Build a form with `method="post"` and `action` pointing to that URL (trailing slash is fine).
 3. Use `name` attributes on inputs; those names drive **`{{placeholder}}`** replacement in email templates.
 4. Add the **nonce** and **honeypot** fields (recommended; see [Special form fields](#special-form-fields)).
@@ -44,13 +44,13 @@ Use cases include Elementor “HTML” widgets, block editor Custom HTML, or any
 
 ---
 
-## Settings (Settings → CF2M)
+## Settings (Settings → AHF2M)
 
-| Setting | Option key | Description |
-|--------|-------------|-------------|
-| **Form endpoint path** | `cf2m_endpoint` | URL slug only (no slashes), e.g. `cf2m` or `submit`. Allowed characters: letters, numbers, `_`, `-`. Default: `cf2m`. Changing this triggers a rewrite flush. |
-| **Recipient email** | `cf2m_recipient_email` | Address that receives submissions. If empty or invalid, the **WordPress admin email** is used. |
-| **Custom email HTML** | `cf2m_email_template` | Optional full HTML for the email body. Sanitized with `wp_kses_post`. See [Template resolution](#template-resolution-order) and [Placeholders](#placeholders). |
+| Setting                | Option key              | Description                                                                                                                                                     |
+| ---------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Form endpoint path** | `ahf2m_endpoint`        | URL slug only (no slashes), e.g. `ahf2m` or `submit`. Allowed characters: letters, numbers, `_`, `-`. Default: `ahf2m`. Changing this triggers a rewrite flush. |
+| **Recipient email**    | `ahf2m_recipient_email` | Address that receives submissions. If empty or invalid, the **WordPress admin email** is used.                                                                  |
+| **Custom email HTML**  | `ahf2m_email_template`  | Optional full HTML for the email body. Sanitized with `wp_kses_post`. See [Template resolution](#template-resolution-order) and [Placeholders](#placeholders).  |
 
 The settings page also shows the exact **form action URL** for your site.
 
@@ -60,24 +60,31 @@ The settings page also shows the exact **form action URL** for your site.
 
 These `name` values are reserved; they are **not** included in the emailed field list as regular data (except where noted).
 
-| Field name | Purpose |
-|------------|--------|
-| `cf2m_nonce` | CSRF token from `[cf2m_nonce_field]` shortcode (or equivalent `wp_nonce_field`). If **present**, it **must** be valid. If **omitted**, the request is still accepted (weaker security). |
-| `cf2m_hp` | Honeypot: must stay **empty**. If filled, the request is rejected as spam-like. |
-| `template_name` | Chooses a **file** template when custom HTML in settings is **empty**: loads `templates/{template_name}.html`, then falls back to `default` / `Default.html`. |
+| Field name      | Purpose                                                                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ahf2m_nonce`   | CSRF token from `[ahf2m_nonce_field]` shortcode (or equivalent `wp_nonce_field`). If **present**, it **must** be valid. If **omitted**, the request is still accepted (weaker security). |
+| `ahf2m_hp`      | Honeypot: must stay **empty**. If filled, the request is rejected as spam-like.                                                                                                          |
+| `template_name` | Chooses a **file** template when custom HTML in settings is **empty**: loads `templates/{template_name}.html`, then falls back to `default` / `Default.html`.                            |
 
 **Shortcode for nonce (in a post/page):**
 
 ```text
-[cf2m_nonce_field]
+[ahf2m_nonce_field]
 ```
 
-Renders the hidden fields WordPress needs for `cf2m_submit_form`.
+Renders the hidden fields WordPress needs for `ahf2m_submit_form`.
 
 **Honeypot example (hide from users, keep empty):**
 
 ```html
-<input type="text" name="cf2m_hp" value="" style="display:none !important;" tabindex="-1" autocomplete="off" />
+<input
+  type="text"
+  name="ahf2m_hp"
+  value=""
+  style="display:none !important;"
+  tabindex="-1"
+  autocomplete="off"
+/>
 ```
 
 ---
@@ -90,7 +97,7 @@ Placeholders are resolved in **email templates** only (custom HTML in settings a
 
 Syntax: double curly braces, optional spaces inside braces.
 
-- **Pattern:** `{{field_name}}`  
+- **Pattern:** `{{field_name}}`
 - **Meaning:** Replaced with the **sanitized** value of the submitted field whose `name` matches, after WordPress **`sanitize_key()`** rules (lowercase, only `a-z`, `0-9`, `_`, `-`).
 
 **Examples:**
@@ -106,19 +113,19 @@ If the field was **not** submitted or is empty after sanitization, the placehold
 
 These are **not** taken from the form; they are injected by the plugin:
 
-| Placeholder | Replaced with |
-|-------------|----------------|
-| `{{siteurl}}` | Site home URL (trailing slash), via `home_url('/')`. |
+| Placeholder   | Replaced with                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `{{siteurl}}` | Site home URL (trailing slash), via `home_url('/')`.                                                     |
 | `{{logourl}}` | Logo URL from theme/custom logo, fallbacks, or `https://yoursite.com/logo.png` if nothing else is found. |
 
 ### 3. Static literals — `[timestamp]` and `[ip]`
 
 These use **square brackets** (not curly braces):
 
-| Token | Replaced with |
-|-------|----------------|
+| Token         | Replaced with                                                                                        |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
 | `[timestamp]` | Current date/time using **Settings → General** date format, time format, and timezone (`wp_date()`). |
-| `[ip]` | Client IP from `HTTP_CLIENT_IP`, `X-Forwarded-For` (first hop), or `REMOTE_ADDR`. If unknown: `N/A`. |
+| `[ip]`        | Client IP from `HTTP_CLIENT_IP`, `X-Forwarded-For` (first hop), or `REMOTE_ADDR`. If unknown: `N/A`. |
 
 Replaced after `{{ }}` processing; values are escaped for HTML.
 
@@ -128,12 +135,12 @@ Replaced after `{{ }}` processing; values are escaped for HTML.
 
 The email body is built in this order:
 
-1. **Custom email HTML** (Settings → CF2M)  
+1. **Custom email HTML** (Settings → AHF2M)  
    If the textarea is **not** empty (after trim), it is used for **every** submission. File templates are ignored in this case.
 
-2. **File templates** (only when custom HTML is empty)  
-   - `wp-content/plugins/cf2m/templates/{template_name}.html`  
-     where `template_name` comes from the POST field `template_name` (default `default`).  
+2. **File templates** (only when custom HTML is empty)
+   - `wp-content/plugins/ahf2m/templates/{template_name}.html`  
+     where `template_name` comes from the POST field `template_name` (default `default`).
    - If that file is missing, **`templates/default.html`**, then **`templates/Default.html`** (for case-sensitive servers).
 
 3. **Fallback**  
@@ -144,12 +151,19 @@ The email body is built in this order:
 ## Example HTML form
 
 ```html
-<form method="post" action="https://example.com/cf2m/">
+<form method="post" action="https://example.com/ahf2m/">
   <!-- If you use the shortcode on a page, paste the rendered nonce fields here instead -->
-  <input type="hidden" name="cf2m_nonce" value="..." />
+  <input type="hidden" name="ahf2m_nonce" value="..." />
   <input type="hidden" name="_wp_http_referer" value="..." />
 
-  <input type="text" name="cf2m_hp" value="" style="display:none !important;" tabindex="-1" autocomplete="off" />
+  <input
+    type="text"
+    name="ahf2m_hp"
+    value=""
+    style="display:none !important;"
+    tabindex="-1"
+    autocomplete="off"
+  />
 
   <input type="hidden" name="template_name" value="default" />
 
@@ -159,7 +173,7 @@ The email body is built in this order:
 </form>
 ```
 
-Point `action` at your real endpoint from **Settings → CF2M**.
+Point `action` at your real endpoint from **Settings → AHF2M**.
 
 ---
 
@@ -186,8 +200,8 @@ Common status codes: `200` success, `400` honeypot/invalid, `403` origin or nonc
 
 - **POST only** at the endpoint.
 - **Same-origin** check using `Origin` / `Referer` host vs site host when those headers are present; if both are missing, the request may still be allowed (defense in depth elsewhere).
-- **Optional nonce** when `cf2m_nonce` is posted.
-- **Honeypot** `cf2m_hp`.
+- **Optional nonce** when `ahf2m_nonce` is posted.
+- **Honeypot** `ahf2m_hp`.
 - **Per-IP rate limit:** 5 submissions per minute (transient-based).
 - **Input sanitization** by field name heuristics (`email`, `url`/`website`, `message`/`comment`, etc.) and `sanitize_key` for names.
 - **No** submission rows written to the WordPress database.
@@ -198,19 +212,19 @@ Common status codes: `200` success, `400` honeypot/invalid, `403` origin or nonc
 
 - **Transport:** WordPress `wp_mail()` (respects SMTP plugins if configured).
 - **Format:** HTML (`Content-Type: text/html; charset=UTF-8`).
-- **Subject:** Localized string `[CF2M] New form submission` (filterable in code if you extend the plugin).
+- **Subject:** Localized string `[AHF2M] New form submission` (filterable in code if you extend the plugin).
 
 ---
 
 ## Troubleshooting
 
-| Issue | What to try |
-|-------|-------------|
-| 404 on form URL | **Settings → Permalinks → Save**. Re-save **Settings → CF2M** after changing the slug. |
-| JSON instead of a “thank you” page | Expected for a raw form POST; use AJAX or a separate thank-you page pattern. |
-| `{{my_field}}` always `N/A` | Check the input `name` matches after `sanitize_key` (lowercase; odd characters stripped). |
-| Email not received | Check spam folder, `wp_mail` / SMTP plugins, and server mail logs. |
-| `403 Origin check failed` | Form must be submitted from the same site (or headers must allow the check). |
+| Issue                              | What to try                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| 404 on form URL                    | **Settings → Permalinks → Save**. Re-save **Settings → AHF2M** after changing the slug.   |
+| JSON instead of a “thank you” page | Expected for a raw form POST; use AJAX or a separate thank-you page pattern.              |
+| `{{my_field}}` always `N/A`        | Check the input `name` matches after `sanitize_key` (lowercase; odd characters stripped). |
+| Email not received                 | Check spam folder, `wp_mail` / SMTP plugins, and server mail logs.                        |
+| `403 Origin check failed`          | Form must be submitted from the same site (or headers must allow the check).              |
 
 ---
 
@@ -219,32 +233,32 @@ Common status codes: `200` success, `400` honeypot/invalid, `403` origin or nonc
 ### Repository layout
 
 ```
-cf2m/
-├── cf2m.php          # Main plugin bootstrap + CF2M_Plugin class
+ahf2m/
+├── ahf2m.php          # Main plugin bootstrap + AHF2M_Plugin class
 ├── templates/        # Optional .html file templates (e.g. default.html)
 └── README.md         # This file
 ```
 
 ### Architecture
 
-- **Single class:** `CF2M_Plugin` (final) in `cf2m.php`.
-- **Rewrite:** `add_rewrite_rule()` maps `^{endpoint}/?$` → `index.php?cf2m_action=submit`.
-- **Query var:** `cf2m_action` registered via `query_vars`; value `submit` triggers the handler.
+- **Single class:** `AHF2M_Plugin` (final) in `ahf2m.php`.
+- **Rewrite:** `add_rewrite_rule()` maps `^{endpoint}/?$` → `index.php?ahf2m_action=submit`.
+- **Query var:** `ahf2m_action` registered via `query_vars`; value `submit` triggers the handler.
 - **Handler:** `template_redirect` → `maybe_handle_submission()`.
-- **Admin:** `options.php` group `cf2m_settings`; menu under **Settings → CF2M**.
+- **Admin:** `options.php` group `ahf2m_settings`; menu under **Settings → AHF2M**.
 
 ### Design choices worth preserving
 
 1. **No DB writes** for form payloads—privacy and simplicity.
 2. **Strict file reads** under `templates/` using `realpath()` and basename allowlists.
 3. **Template rendering** separates `{{ }}` (escaped values) from `[timestamp]` / `[ip]` (literal tokens).
-4. **Options:** use `register_setting` + sanitize callbacks; endpoint changes hook `update_option_cf2m_endpoint` to flush rewrites.
+4. **Options:** use `register_setting` + sanitize callbacks; endpoint changes hook `update_option_ahf2m_endpoint` to flush rewrites.
 
 ### How to extend safely
 
 - Prefer **`wp_mail` filters** (e.g. `wp_mail`, `wp_mail_from`) for from-address or headers rather than editing core flow unless necessary.
 - New **placeholders:** extend `normalize_template_data()` and/or `apply_builtin_template_tokens()`; document them in this README.
-- **i18n:** strings use `__()` / `esc_html__()` with text domain `cf2m`; add a `languages/` catalog if you ship translations.
+- **i18n:** strings use `__()` / `esc_html__()` with text domain `ahf2m`; add a `languages/` catalog if you ship translations.
 
 ### Coding standards
 
@@ -261,10 +275,10 @@ cf2m/
 
 ## License
 
-This plugin is licensed under the **GPL-2.0-or-later** (see plugin header and `License` URI in `cf2m.php`).
+This plugin is licensed under the **GPL-2.0-or-later** (see plugin header and `License` URI in `ahf2m.php`).
 
 ---
 
 ## Credits
 
-Maintained by **Eric Aimhigh** and contributors. Issues and PRs welcome on the plugin’s GitHub repository (see **Plugin URI** in `cf2m.php`).
+Maintained by **Eric Aimhigh** and contributors. Issues and PRs welcome on the plugin’s GitHub repository (see **Plugin URI** in `ahf2m.php`).
