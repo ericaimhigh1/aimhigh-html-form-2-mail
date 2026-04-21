@@ -1,4 +1,14 @@
-# Custom Form 2 Mail (CF2M)
+=== CCustom Form 2 Mail (CF2M) ===
+Contributors: ericaimhigh
+Tags: coupon, gutenberg, block, affiliate, discount
+Requires at least: 5.8
+Tested up to: 6.9
+Stable tag: 1.0.0
+Requires PHP: 7.4
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+
+# 
 
 **CF2M** is a WordPress plugin that exposes a **configurable public URL** where visitors can `POST` a plain HTML form. Submissions are **sanitized**, **never stored in the database**, and sent to a recipient as an **HTML email** using your **template** (admin HTML and/or files under `templates/`).
 
