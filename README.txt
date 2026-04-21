@@ -1,9 +1,9 @@
 === Custom Form 2 Mail ===
 Contributors: ericaimhigh
-Donate link: https://example.com/donate
+Donate link: https://github.com/ericaimhigh1/custom-form-2-mail
 Tags: forms, mail, contact form, static sites, headless
 Requires at least: 6.0
-Tested up to: 6.5
+Tested up to: 6.9
 Requires PHP: 7.4
 Stable tag: 1.0.0
 License: GPLv2 or later

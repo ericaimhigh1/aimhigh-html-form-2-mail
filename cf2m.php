@@ -157,7 +157,7 @@ final class CF2M_Plugin {
 
 		$slug   = self::get_endpoint_slug();
 		$url    = home_url('/' . rawurlencode($slug) . '/');
-		$action = esc_url(admin_url('options.php'));
+		$url    = esc_url($url);
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html__('CF2M — Form to email', 'cf2m'); ?></h1>
@@ -172,7 +172,7 @@ final class CF2M_Plugin {
 				);
 				?>
 			</p>
-			<form method="post" action="<?php echo $action; ?>">
+			<form method="post" action="<?php echo esc_url(admin_url('options.php')); ?>">
 				<?php settings_fields('cf2m_settings'); ?>
 				<table class="form-table" role="presentation">
 					<tr>
@@ -216,7 +216,8 @@ final class CF2M_Plugin {
 			return;
 		}
 
-		if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+		$request_method = isset($_SERVER['REQUEST_METHOD']) ? sanitize_text_field(wp_unslash((string) $_SERVER['REQUEST_METHOD'])) : '';
+		if ($request_method !== 'POST') {
 			self::respond(405, __('Method not allowed. Use POST.', 'cf2m'));
 		}
 
@@ -357,8 +358,20 @@ final class CF2M_Plugin {
 
 	private static function is_same_origin_request(): bool {
 		$site_host = wp_parse_url(home_url(), PHP_URL_HOST);
-		$origin    = isset($_SERVER['HTTP_ORIGIN']) ? wp_parse_url((string) $_SERVER['HTTP_ORIGIN'], PHP_URL_HOST) : null;
-		$referer   = isset($_SERVER['HTTP_REFERER']) ? wp_parse_url((string) $_SERVER['HTTP_REFERER'], PHP_URL_HOST) : null;
+
+		$origin_raw = '';
+		if (isset($_SERVER['HTTP_ORIGIN'])) {
+			$origin_raw = sanitize_text_field(wp_unslash((string) $_SERVER['HTTP_ORIGIN']));
+		}
+		$origin_url = $origin_raw !== '' ? esc_url_raw($origin_raw) : '';
+		$origin     = $origin_url !== '' ? wp_parse_url($origin_url, PHP_URL_HOST) : null;
+
+		$referer_raw = '';
+		if (isset($_SERVER['HTTP_REFERER'])) {
+			$referer_raw = sanitize_text_field(wp_unslash((string) $_SERVER['HTTP_REFERER']));
+		}
+		$referer_url = $referer_raw !== '' ? esc_url_raw($referer_raw) : '';
+		$referer     = $referer_url !== '' ? wp_parse_url($referer_url, PHP_URL_HOST) : null;
 
 		if (!$site_host) {
 			return false;
@@ -540,9 +553,14 @@ final class CF2M_Plugin {
 		$keys = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'];
 
 		foreach ($keys as $key) {
-			if (!empty($_SERVER[$key])) {
-				$ip = explode(',', (string) $_SERVER[$key])[0];
-				return trim($ip);
+			if (!isset($_SERVER[ $key ]) || ! is_string($_SERVER[ $key ]) || $_SERVER[ $key ] === '') {
+				continue;
+			}
+
+			$raw = sanitize_text_field(wp_unslash($_SERVER[ $key ]));
+			$ip  = trim(explode(',', $raw, 2)[0]);
+			if ($ip !== '') {
+				return $ip;
 			}
 		}
 
